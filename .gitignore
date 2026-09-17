@@ -1,0 +1,72 @@
+# Environnement virtuel
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.spec
+.pyinstaller/
+
+# Fichiers de runtime / artefacts locaux
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Éditeur / IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Fichiers de test / couverture
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Base de données locale du projet
+printpay.db
+*.db
+*.sqlite3
+
+# Fichiers de compilation / export
+
+*.app
+
+
+# Fichiers système / OS
+.AppleDouble
+.LSOverride
+._*
+
+# UV / pip cache
+.uv_cache/
+.pip-cache/
+
+# Variables locales / secrets
+.env
+.env.*
+.env.local
+
+# Fichiers de collecte / dépendances locales
+*.egg-info/
+.eggs/
+.Python
+
+# Jupyter / notebooks temporaires
+.ipynb_checkpoints/
+
+# Mac / Windows cache
+*.DS_Store
+**/.DS_Store

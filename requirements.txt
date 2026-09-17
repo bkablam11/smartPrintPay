@@ -1,0 +1,9 @@
+customtkinter>=5.2.0
+pypdf>=4.0.0
+Pillow
+pymupdf
+requests
+pywin32>=306; sys_platform == 'win32'
+
+# Conditionnel : Ne s'installera QUE sur Windows, ignoré sur macOS
+# pyinstaller --noconsole --onefile --collect-all customtkinter --add-binary "SumatraPDF.exe;." --name PrintPay app.py
