@@ -1,296 +1,228 @@
-# smartPrintPay
-
-![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-0078D4?style=for-the-badge&logo=windows&logoColor=white)
-![UI](https://img.shields.io/badge/UI-CustomTkinter-00A1FF?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Prototype%20actif-success?style=for-the-badge)
-![Packaging](https://img.shields.io/badge/Packaging-PyInstaller-4EAA25?style=for-the-badge)
-![School](https://img.shields.io/badge/Use-Print%20Management%20School-FF6F61?style=for-the-badge)
-
-Application desktop Python destinée à la gestion et au calcul du coût d’impression scolaire, avec interface moderne, impression directe, historique local et synchronisation vers Google Sheets.
-
-## Sommaire
-
-- [Présentation](#présentation)
-- [Fonctionnalités](#fonctionnalités)
-- [Technologies utilisées](#technologies-utilisées)
-- [Arborescence du projet](#arborescence-du-projet)
-- [Installation](#installation)
-- [Lancement](#lancement)
-- [Utilisation](#utilisation)
-- [Tarification](#tarification)
-- [Déploiement](#déploiement)
-- [Détails techniques](#détails-techniques)
-- [Points de vigilance](#points-de-vigilance)
-- [Améliorations futures](#améliorations-futures)
-
-## Présentation
-
-smartPrintPay est une application de bureau créée pour simplifier l’impression dans un contexte scolaire ou de reprographie. Elle permet à un enseignant ou à un agent de :
-
-- sélectionner un document PDF, Word ou Excel ;
-- choisir un enseignant ;
-- définir la plage de pages à imprimer ;
-- choisir le mode Recto ou Recto-Verso ;
-- activer ou non l’impression couleur ;
-- sélectionner l’imprimante disponible ;
-- calculer le coût total automatiquement ;
-- lancer l’impression ;
-- enregistrer l’opération localement dans une base SQLite ;
-- synchroniser les logs vers Google Sheets.
-
-Le projet a été pensé pour fonctionner à la fois sur Windows et sur macOS, tout en gardant une interface simple et accessible pour des utilisateurs non techniques.
-
-## Fonctionnalités
-
-### Gestion des enseignants
-
-- ajout d’un enseignant depuis l’interface ;
-- suppression d’un enseignant ;
-- sélection dans une liste déroulante ;
-- stockage en base SQLite locale.
-
-### Sélection des documents
-
-- support des fichiers PDF, DOCX, DOC et XLSX ;
-- sélection via un explorateur système ;
-- historique des derniers fichiers utilisés.
-
-### Calcul de coût
-
-- calcul automatique selon le nombre de pages ;
-- mode Recto Simple : 15 FCFA par feuille ;
-- mode Recto-Verso : 25 FCFA par feuille ;
-- impression couleur : 25 FCFA supplémentaire par feuille ;
-- nombre de copies configurable ;
-- affichage du total avant impression.
-
-### Impression
-
-- détection automatique des imprimantes selon le système ;
-- mode test sans imprimante pour simuler un traitement ;
-- impression native sur macOS via la commande `lp` ;
-- impression standard sur Windows via le système d’impression natif.
-
-### Aperçu de pages
-
-- aperçu visuel de PDF ;
-- navigation entre pages sélectionnées ;
-- calcul de la plage de pages demandée.
-
-### Historique et synchronisation
-
-- enregistrement des impressions dans une base SQLite locale ;
-- journalisation des données d’impression ;
-- synchronisation par lots vers Google Sheets via un webhook ;
-- protection du thread UI pour éviter les blocages graphiques.
-
-## Technologies utilisées
-
-- Python 3.12 / 3.14
-- CustomTkinter pour l’interface graphique
-- SQLite pour la base locale
-- PyPDF pour la lecture des PDF
-- Pillow pour l’aperçu des pages PDF
-- PyMuPDF (optionnel selon l’environnement) pour la génération d’aperçu
-- Requests pour la synchronisation HTTP
-- PyInstaller pour le packaging en exécutable
-- win32print côté Windows
-- `lp` / `lpstat` côté macOS
-
-## Arborescence du projet
-
-```text
-smartPrintPay/
-├── .git/                  # données Git du projet
-├── .kilo/                 # éventuels fichiers de config/usage Kilo
-├── .python-version        # version Python ciblée par le projet
-├── .venv/                 # environnement virtuel local
-├── app.py                 # application principale
-├── printpay.db            # base SQLite locale (enseignants + logs)
-├── pyproject.toml         # configuration du projet et dépendances
-├── README.md              # documentation du projet
-├── requirements.txt       # dépendances Python
-├── uv.lock                # lockfile UV
-└── .gitignore             # (si présent selon l’environnement local)
-```
-
-## Installation
-
-### Avec UV (recommandé)
-
-```bash
-uv sync
-```
-
-### Avec pip
-
-```bash
-python -m venv .venv
-source .venv/bin/activate   # macOS / Linux
-# ou .venv\Scripts\activate  # Windows
-pip install -r requirements.txt
-```
-
-### Dépendances importantes
-
-```bash
-pip install customtkinter pypdf Pillow pymupdf requests pyinstaller openpyxl pandas psutil docx2pdf
-```
-
-Sur Windows, il est utile d’ajouter :
-
-```bash
-pip install pywin32
-```
-
-## Lancement
-
-### Depuis le terminal
-
-```bash
-uv run python app.py
-```
-
-ou
-
-```bash
-source .venv/bin/activate
-python app.py
-```
-
-### En mode simulation
-
-L’application fournit un mode “Mode Test (Simulation sans imprimante)” dans la liste des imprimantes. Ce mode sert à tester le comportement sans action réelle d’impression.
-
-## Utilisation
-
-1. Choisir un enseignant.
-2. Sélectionner un document PDF, Word ou Excel.
-3. Définir la plage de pages à imprimer.
-4. Choisir le type d’impression : Recto ou Recto-Verso.
-5. Cocher “Couleur” si nécessaire.
-6. Définir le nombre de copies.
-7. Sélectionner l’imprimante disponible.
-8. Vérifier le résumé du coût.
-9. Cliquer sur “IMPRIMER”.
-10. Vérifier l’historique et la synchronisation dans la base locale.
-
-## Tarification
-
-Le calcul est intégré directement dans la logique de l’application.
-
-| Mode | Prix unitaire | Note |
-| --- | --- | --- |
-| Recto Simple, Noir & Blanc | 15 FCFA | par feuille |
-| Recto-Verso, Noir & Blanc | 25 FCFA | par feuille imprimée |
-| Recto Simple, Couleur | 25 FCFA | par feuille |
-| Recto-Verso, Couleur | 50 FCFA | par feuille |
-
-Exemple :
-
-- 10 pages
-- 20 exemplaires
-- Recto, noir & blanc
-
-Total calculé :
-
-$$
-10 \times 20 \times 15 = 3000 \text{ FCFA}
-$$
-
-Autre exemple :
-
-- 10 pages
-- 20 exemplaires
-- Recto-Verso, noir & blanc
-
-Le système convertit automatiquement le nombre de feuilles pour calculer le bon coût.
-
-## Déploiement
-
-### Windows
-
-Le projet peut être empaqueté en exécutable unique :
-
-```bash
-pyinstaller --noconsole --onefile app.py
-```
-
-### macOS
-
-```bash
-pyinstaller --noconsole --windowed app.py
-```
-
-Cette logique est pensée pour livrer une application utilisable sans dépendances Python côté utilisateur final.
-
-## Détails techniques
-
-### Base de données locale
-
-Le fichier `printpay.db` contient au moins deux tables :
-
-- `teachers` : liste des enseignants
-- `print_logs` : historique des impressions avec :
-  - nom de l’enseignant ;
-  - nom du fichier ;
-  - chemin du fichier ;
-  - plage sélectionnée ;
-  - nombre de pages ;
-  - copies ;
-  - total de feuilles ;
-  - mode d’impression ;
-  - type noir/blanc ou couleur ;
-  - coût total ;
-  - date et heure ;
-  - état de synchronisation.
-
-### Synchronisation
-
-Les lignes non synchronisées sont envoyées via une requête HTTP vers un webhook Google Apps Script. Cette logique est exécutée dans un thread distinct pour ne pas bloquer l’interface utilisateur.
-
-### Sécurité / robustesse
-
-- éviter les segfaults UI par l’utilisation d’un queue de messages côté thread principal ;
-- validation de la plage de pages ;
-- contrôle des valeurs de copies ;
-- détection des erreurs d’impression ;
-- message d’alerte en cas de problème de connexion ou d’imprimantes indisponibles.
-
-## Points de vigilance
-
-### Système d’exploitation
-
-- Windows : dépend de l’environnement, des pilotes et du système d’impression native.
-- macOS : repose sur `lp` et les outils nativement fournis par le système.
-
-### Versions Python
-
-Le projet est configuré avec une version Python ciblée dans `.python-version` et dans `pyproject.toml`. Vérifiez la compatibilité avant d’installer les dépendances.
-
-### Dépendances optionnelles
-
-Certains paquets sont conditionnels selon l’OS (par exemple `pywin32`). Cela évite les erreurs d’installation sur macOS.
-
-## Améliorations futures
-
-- ajouter un vrai système de gestion des quotas par enseignant ;
-- exporter les historiques en CSV ou Excel ;
-- gérer les fichiers images et les formats supplémentaires ;
-- améliorer le design avec une vraie zone de prévisualisation plus avancée ;
-- sécuriser le webhook avec authentification ou proxy propre ;
-- générer un packaging final plus stable pour la production.
-
-## Conclusion
-
-smartPrintPay est un projet de gestion d’impression scolaire pensé pour être simple, rapide et fiable, avec un usage réel dans un environnement de classe ou de reprographie. L’architecture actuelle associe interface utilisateur, base locale, calcul tarifaire automatique et synchronisation réseau, ce qui en fait un outil pratique pour des usages quotidiens.
+# 🖨️ PrintPay — Station d'Impression & Comptabilité Scolaire Intelligente
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Version-1.0.0-0284C7?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Interface-CustomTkinter-blue?style=for-the-badge" alt="CustomTkinter">
+  <img src="https://img.shields.io/badge/Moteur_PDF-PyMuPDF_300DPI-FF6F00?style=for-the-badge" alt="PyMuPDF">
+  <img src="https://img.shields.io/badge/Base_de_Donn%C3%A9es-SQLite3-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/Cloud-Google_Sheets_API-34A853?style=for-the-badge&logo=googlesheets&logoColor=white" alt="Google Sheets">
+</p>
+
+> **PrintPay** réinvente le dialogue d'impression classique (*Ctrl + P*) pour les établissements scolaires et centres de reprographie.  
+> C'est une application de bureau multiplateforme (**Windows & macOS**) autonome, **100 % opérationnelle hors-ligne**, combinant prévisualisation interactive, routage d'imprimante matériel, calcul tarifaire automatisé et synchronisation cloud discrète vers un tableau de bord décisionnel.
 
 ---
 
-Projet : smartPrintPay  
-Type : application desktop Python  
-Objectif : gestion et calcul des impressions scolaires  
-Compatibilité : Windows et macOS
-Docker: docker run --rm -v "$(pwd):/src" --platform linux/amd64 cdrx/pyinstaller-windows:python3 \
-  "pip install -r requirements.txt && pyinstaller --noconsole --onefile --collect-all customtkinter --name PrintPay app.py"
+## 📌 Sommaire
+1. [Problématique & Solution](#-problématique--solution)
+2. [Fonctionnalités Clés](#-fonctionnalités-clés)
+3. [Architecture Technique & Innovations](#-architecture-technique--innovations)
+4. [Règles de Calcul & Modèle Économique](#-règles-de-calcul--modèle-économique)
+5. [Tableau de Bord & Gestion des Stocks (Google Sheets)](#-tableau-de-bord--gestion-des-stocks-google-sheets)
+6. [Installation & Développement](#-installation--développement)
+7. [Génération des Exécutables (Build)](#-génération-des-exécutables-build)
+8. [Guide d'Utilisation](#-guide-dutilisation)
+9. [Auteur](#-auteur)
+
+---
+
+## 🎯 Problématique & Solution
+
+### Le problème en établissement scolaire :
+* **Gaspillage massif de papier** : Un clic accidentel sur *Imprimer* lance souvent l'intégralité d'un document (ex: 149 pages) au lieu d'une fiche précise.
+* **Dérive des coûts** : L'encre couleur est utilisée à l'insu de l'administration sur des documents qui ne nécessitent que du noir et blanc.
+* **Comptabilité manuelle fastidieuse** : Noter sur un cahier qui a imprimé quoi engendre des oublis, des contestations et une perte de revenus pour le centre de reprographie.
+
+### La solution PrintPay :
+* **Pré-traitement physique des fichiers** : L'application découpe le document avant impression ; si l'utilisateur demande `1-1`, le bac d'impression ne reçoit physiquement qu'une seule page.
+* **Double verrouillage Noir & Blanc / Couleur** : Conversion à la volée en niveaux de gris purs (0 % de composante couleur) pour interdire le tirage couleur accidentel.
+* **Traçabilité totale en temps réel** : Chaque feuille tirée est débitée au compte du professeur, enregistrée en base locale SQLite et synchronisée sur Google Sheets pour les bilans mensuels.
+
+---
+
+## ✨ Fonctionnalités Clés
+
+* 👁️ **Aperçu Dynamique en Direct** :
+  * L'aperçu réagit instantanément à la sélection de plage (`1-1`, `1-5`, etc.).
+  * **Contrôle visuel de la couleur** : Par défaut, l'aperçu s'affiche en **Noir & Blanc `[N&B]`**. Dès que la case couleur est cochée, il bascule en direct en **Couleur `[Couleur]`**.
+* 📐 **Orientation Automatique (façon Foxit Reader)** :
+  * Détection automatique des formats paysage (`largeur > hauteur`).
+  * Rotation physique de 90° pour exploiter 100 % de la feuille A4 (fini les bandes blanches géantes ou les rétrécissements à 70 %).
+* 🖨️ **Routage Strict d'Imprimante** :
+  * Détection à chaud des imprimantes connectées (USB, réseau, ticket POS).
+  * Envoi direct à l'imprimante choisie (supprime le bug de forçage de l'imprimante système par défaut).
+* 🧪 **Mode Test & Simulation** :
+  * Permet de simuler un tirage complet (calcul, débit, enregistrement et synchronisation) même si aucune imprimante n'est physiquement branchée.
+* ☁️ **Synchronisation Cloud Asynchrone (Zero Lag)** :
+  * Fonctionnement garanti hors-ligne (stockage local immédiat).
+  * Démon multithread sécurisé avec file d'attente (`queue.Queue`) qui pousse les données par lot vers Google Sheets dès qu'une connexion internet est détectée.
+
+---
+
+## 🏗️ Architecture Technique & Innovations
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   PrintPay (Interface Utilisateur)          │
+└───────────────┬─────────────────────────────┬───────────────┘
+                │                             │
+    [Pré-traitement PDF]             [Base Locale SQLite]
+    • Découpe de plage               • Table teachers
+    • Rotation physique 90°          • Table print_logs (is_synced)
+    • Rendu 300 DPI (csRGB / csGRAY)          │
+                │                             ▼
+                ▼                [Démon Multithread Sécurisé]
+    [Moteur d'Impression]                     │
+    • macOS : CUPS (lp -d ...)                ▼
+    • Windows : SumatraPDF CLI       [Webhook Google Apps Script]
+                │                             │
+                ▼                             ▼
+    [Sortie Papier Physique]         [Google Sheets : smartprintPay]
+    (Canon, HP, Epson...)            • Journal détaillé
+                                     • Bilan par Enseignant
+                                     • Tableau de Bord & Donut Dépenses
+```
+
+### 1. Pourquoi le "Slicing" résout le bug des 149 pages :
+Au lieu de déléguer le filtrage au pilote Windows/Mac (qui l'ignore souvent en ligne de commande), PrintPay utilise **PyMuPDF** pour extraire uniquement les pages demandées dans un fichier temporaire :
+$$\text{Fichier source (149 pages)} \xrightarrow{\text{Filtre 1-1}} \text{Fichier temporaire (1 page physique)}$$
+L'imprimante est physiquement incapable d'imprimer le reste du document.
+
+### 2. Pourquoi le double verrouillage N&B bloque l'encre couleur :
+Sur imprimante jet d'encre (ex: Canon G3010), un document RVB imprimé sans ordre strict mélange les encres Cyan, Magenta et Jaune pour fabriquer un noir composite.  
+PrintPay neutralise cela à la racine :
+1. **Niveau Fichier** : Rendu raster 300 DPI converti en `csGRAY` (1 seul canal, 0 octet de couleur).
+2. **Niveau Matériel** : Envoi de l'instruction matérielle `monochrome` (Windows) ou `-o print-color-mode=monochrome` (macOS).
+
+---
+
+## 💰 Règles de Calcul & Modèle Économique
+
+Le barème intégré applique une tarification transparente et équitable :
+
+| Mode d'impression | Tarif unitaire | Formule de calcul |
+| :--- | :---: | :--- |
+| **Recto Simple (Noir & Blanc)** | **15 FCFA** | $\text{Feuilles} = \text{Pages} \times \text{Copies}$ |
+| **Recto-Verso (Noir & Blanc)** | **25 FCFA** | $\text{Feuilles} = \lceil\text{Pages} / 2\rceil \times \text{Copies}$ |
+| **Recto Simple (Couleur)** | **25 FCFA** | $\text{Feuilles} = \text{Pages} \times \text{Copies}$ |
+| **Recto-Verso (Couleur)** | **50 FCFA** | $\text{Feuilles} = \lceil\text{Pages} / 2\rceil \times \text{Copies}$ |
+
+### Comptes Spéciaux intégrés :
+* **`photocopie`** : Dédié aux tirages comptoir (élèves, secrétariat, usagers externes).
+* **`papier gache`** : Dédié au suivi des bourrages et ratés techniques. Les feuilles sont décomptées du stock réel sans être facturées à un enseignant.
+
+---
+
+## 📊 Tableau de Bord & Gestion des Stocks (Google Sheets)
+
+Le classeur Google Sheets connecté (`smartprintPay`) est structuré en 4 onglets :
+
+1. **`Journal`** : Historique brut exhaustif alimenté en temps réel par les postes d'impression (ID unique, Date, Enseignant, Fichier, Plage, Feuilles, Mode, Type, Coût).
+2. **`Bilan Enseignants`** : Synthèse mensuelle dynamique (`YYYY-MM`) indiquant le total des feuilles et le montant dû par chaque professeur.
+3. **`Dépenses`** : Registre d'achats pour la reprographie (Cartons de papier, Toners, Boîtes d'agrafes, Transport, Achat machines).
+4. **`Tableau de Bord`** : Vue exécutive avec calcul automatique de la rentabilité :
+   * **Consommation de papier** : $\text{Cartons consommés} = \frac{\text{Total Feuilles}}{2\,500}$ *(base : 1 carton = 5 rames de 500 feuilles)*.
+   * **Bénéfice Net d'Exploitation** : $\text{Recettes Tirages} - \text{Dépenses Consommables}$.
+   * **Graphique 1 (Barres)** : Classement des enseignants selon le volume de papier consommé.
+   * **Graphique 2 (Donut)** : Répartition analytique des dépenses (Papier vs Encre vs Fournitures).
+
+---
+
+## 🚀 Installation & Développement
+
+### Prérequis
+* Python **3.11** ou **3.12**
+* Gestionnaire de paquets **`uv`** (recommandé) ou `pip`
+
+### 1. Cloner le projet
+```bash
+git clone https://github.com/votre-compte/smartPrintPay.git
+cd smartPrintPay
+```
+
+### 2. Installer les dépendances
+```bash
+uv venv --python 3.12
+source .venv/bin/activate   # Sur Windows : .venv\Scripts\activate
+uv pip install -r requirements.txt
+```
+
+### Contenu de `requirements.txt` :
+```text
+customtkinter>=5.2.0
+pypdf>=4.0.0
+Pillow
+pymupdf
+requests
+pywin32>=306; sys_platform == 'win32'
+```
+
+### 3. Lancer l'application en développement
+```bash
+python app.py
+```
+
+---
+
+## 📦 Génération des Exécutables (Build)
+
+Aucun des postes finaux de l'école n'a besoin d'avoir Python installé. L'application est compilée en fichier autonome.
+
+### 🍏 Compilation pour macOS (`PrintPay.app`)
+À exécuter directement sur votre Mac :
+```bash
+.venv/bin/pyinstaller --noconsole --windowed --collect-all customtkinter --name "PrintPay" app.py
+```
+👉 L'application **`PrintPay.app`** est générée dans le dossier `dist/`.
+
+### 🪟 Compilation pour Windows (`PrintPay.exe`)
+
+#### Méthode A : Directement depuis votre Mac via Docker (Recommandée)
+Nul besoin d'allumer un PC Windows pour compiler l'exécutable Windows. Lancez :
+```bash
+docker run --rm -v "$(pwd):/src" -w /src --platform linux/amd64 tobix/pywine:3.11 \
+  sh -c "wine python -m pip install pyinstaller -r requirements.txt && wine pyinstaller --noconsole --onefile --collect-all customtkinter --name PrintPay app.py"
+```
+👉 Le fichier **`PrintPay.exe`** est généré directement dans votre dossier `dist/`.
+
+#### Méthode B : Directement sur un PC Windows
+1. Installez Python 3.12 sur le PC (en cochant **☑️ Add python.exe to PATH**).
+2. Lancez :
+   ```cmd
+   pip install -r requirements.txt
+   pip install pyinstaller
+   pyinstaller --noconsole --onefile --collect-all customtkinter --name PrintPay app.py
+   ```
+
+> 💡 **Important pour Windows** : Déposez le petit fichier portable **`SumatraPDF.exe`** (fourni dans le dossier `win/`) dans le même répertoire que `PrintPay.exe` pour garantir l'impression silencieuse sans dépendre de logiciels tiers.
+
+---
+
+## 📖 Guide d'Utilisation
+
+1. **Lancement** : Double-cliquez sur l'icône `PrintPay`.
+2. **Sélection de l'enseignant** : Choisissez dans la liste déroulante (ou cliquez sur `➕` pour en ajouter un, `🗑️` pour en supprimer).
+3. **Choix du document** : Cliquez sur `📂 Parcourir...` ou sélectionnez l'un des fichiers récents.
+4. **Options** :
+   * Choisissez le mode : *Recto* ou *Recto-Verso*.
+   * Cochez *Couleur* si nécessaire (l'aperçu à droite confirme immédiatement la couleur).
+   * Indiquez la plage (ex : `1-1` pour la première page, `1-3` pour les 3 premières).
+   * Ajustez le nombre d'exemplaires avec `+` et `-`.
+5. **Impression** : Sélectionnez l'imprimante et cliquez sur **`🖨️ IMPRIMER`**.
+
+---
+
+## 👨‍💻 Auteur
+
+**Edjabrou Ulrich Blanchard KABLAM**  
+*Ingénieur en Intelligence Artificielle & Data Science*  
+*Enseignant de Mathématiques (ENS Abidjan)*  
+
+* **LinkedIn** : [blanchard-kablam](https://www.linkedin.com/in/blanchard-kablam)
+* **ORCID** : [0009-0009-1464-5049](https://orcid.org/0009-0009-1464-5049)
+* **Email** : bkablam11@gmail.com
+* **Localisation** : Abidjan, Côte d'Ivoire
+
+---
+*Projet développé avec passion pour moderniser et fiabiliser la gestion matérielle et financière des établissements éducatifs.*

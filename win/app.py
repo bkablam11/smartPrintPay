@@ -3,6 +3,7 @@ import sys
 import math
 import io
 import queue
+import tempfile
 import platform
 import sqlite3
 import subprocess
@@ -14,6 +15,7 @@ from tkinter import filedialog, messagebox
 from pypdf import PdfReader
 import requests
 
+# Moteur de rendu PDF
 try:
     import pymupdf
     HAS_PYMUPDF = True
@@ -56,17 +58,42 @@ def init_db():
         )
     """)
     
-    # N'insère les profs par défaut QUE si la table est TOTALEMENT VIDE (premier démarrage)
+    # N'insère les profs par défaut QUE si la table est totalement vide
     cursor.execute("SELECT COUNT(*) FROM teachers")
     if cursor.fetchone()[0] == 0:
-        profs = ['papier gache', 'photocopie']
-        for p in profs:
+        for p in ['papier gache', 'photocopie']:
             cursor.execute("INSERT INTO teachers (nom) VALUES (?)", (p,))
             
     conn.commit()
     conn.close()
 
-# ----------------- 2. UTILITAIRES SYSTÈME -----------------
+# ----------------- 2. UTILITAIRES SYSTÈME & DÉTECTION SUMATRA -----------------
+def find_sumatra_executable():
+    """Détecte n'importe quel exécutable SumatraPDF (SumatraPDF.exe, SumatraPDF-3.6-64.exe, etc.)"""
+    # 1. Dans le bundle temporaire PyInstaller
+    if hasattr(sys, '_MEIPASS'):
+        for f in os.listdir(sys._MEIPASS):
+            if "sumatra" in f.lower() and f.lower().endswith(".exe"):
+                return os.path.join(sys._MEIPASS, f)
+        
+    # 2. Dossiers locaux et système Windows
+    base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    search_dirs = [
+        base_dir,
+        os.path.join(base_dir, "win"),
+        os.getcwd(),
+        os.path.join(os.getcwd(), "win"),
+        r"C:\Program Files\SumatraPDF",
+        r"C:\Program Files (x86)\SumatraPDF",
+        os.path.expandvars(r"%LOCALAPPDATA%\SumatraPDF")
+    ]
+    for d in search_dirs:
+        if os.path.exists(d):
+            for f in os.listdir(d):
+                if "sumatra" in f.lower() and f.lower().endswith(".exe"):
+                    return os.path.join(d, f)
+    return None
+
 def parse_page_range(range_str, max_pages=None):
     pages = set()
     cleaned = range_str.strip().replace(" ", "")
@@ -90,6 +117,39 @@ def parse_page_range(range_str, max_pages=None):
     except Exception:
         return [], 0
 
+# FONCTION GLOBALE DE DÉCOUPE, ROTATION ET ESPACE DE COULEUR
+def create_prepared_print_pdf(source_pdf, pages_to_keep, is_color=False):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    temp_pdf = os.path.join(tempfile.gettempdir(), f"printpay_job_{timestamp}.pdf")
+    
+    doc = pymupdf.open(source_pdf)
+    output_doc = pymupdf.open()
+
+    for p_num in pages_to_keep:
+        if 1 <= p_num <= len(doc):
+            page = doc[p_num - 1]
+            rect = page.rect
+            
+            # Détection : la page est-elle en mode Paysage ?
+            is_landscape = rect.width > rect.height
+
+            # Si paysage : rotation de 90° pour s'aligner sur la feuille A4
+            if is_landscape:
+                page.set_rotation((page.rotation + 90) % 360)
+
+            # Rendu haute définition 300 DPI : RGB réel si couleur, GRAY pur si N&B
+            c_space = pymupdf.csRGB if is_color else pymupdf.csGRAY
+            pix = page.get_pixmap(dpi=300, colorspace=c_space)
+            img_bytes = pix.tobytes("png")
+            
+            new_page = output_doc.new_page(width=page.rect.width, height=page.rect.height)
+            new_page.insert_image(new_page.rect, stream=img_bytes)
+
+    output_doc.save(temp_pdf)
+    output_doc.close()
+    doc.close()
+    return temp_pdf
+
 def get_printers():
     printers = ["🧪 Mode Test (Simulation sans imprimante)"]
     try:
@@ -103,7 +163,7 @@ def get_printers():
             if res.returncode == 0 and res.stdout.strip():
                 printers.extend(res.stdout.strip().splitlines())
     except Exception as e:
-        print(f"Erreur imprimantes: {e}")
+        print(f"Erreur détection imprimantes: {e}")
     return printers
 
 def get_app_recent_files():
@@ -126,7 +186,7 @@ def count_pages(filepath):
             return 1
     return 1
 
-# ----------------- 3. INTERFACE GRAPHIQUE ANTI-SEGFAULT -----------------
+# ----------------- 3. INTERFACE GRAPHIQUE -----------------
 class PrintPayApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -140,20 +200,15 @@ class PrintPayApp(ctk.CTk):
         self.selected_pages_list = [1]
         self.current_selection_index = 0
 
-        # File d'attente thread-safe pour les messages de statut (évite tout segfault sous Mac)
         self.sync_queue = queue.Queue()
 
         self.setup_ui()
         self.refresh_recent_dropdown()
 
-        # 1. Écoute de la file d'attente sur le thread principal
         self.poll_sync_queue()
-
-        # 2. Démarrage de la synchronisation en arrière-plan SEULEMENT 2 secondes après l'affichage complet
         self.after(2000, self.schedule_next_sync)
 
     def poll_sync_queue(self):
-        """Vérifie périodiquement s'il y a un message graphique à afficher (Thread principal)"""
         try:
             while True:
                 text, color = self.sync_queue.get_nowait()
@@ -163,7 +218,6 @@ class PrintPayApp(ctk.CTk):
         self.after(400, self.poll_sync_queue)
 
     def schedule_next_sync(self):
-        """Déclenche la sync en arrière-plan et replanifie la suivante dans 15 secondes"""
         threading.Thread(target=self.push_pending_batch, daemon=True).start()
         self.after(15000, self.schedule_next_sync)
 
@@ -184,7 +238,7 @@ class PrintPayApp(ctk.CTk):
         left_frame = ctk.CTkFrame(body, width=580)
         left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-       # 1. Enseignant
+        # 1. Enseignant
         ctk.CTkLabel(left_frame, text="1. Sélectionner l'Enseignant :", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=15, pady=(15, 2))
 
         teacher_box = ctk.CTkFrame(left_frame, fg_color="transparent")
@@ -196,11 +250,10 @@ class PrintPayApp(ctk.CTk):
         self.btn_add_teacher = ctk.CTkButton(teacher_box, text="➕", width=45, height=35, fg_color="#475569", command=self.add_new_teacher)
         self.btn_add_teacher.pack(side="left", padx=(0, 5))
 
-        # BOUTON SUPPRIMER
         self.btn_del_teacher = ctk.CTkButton(teacher_box, text="🗑️", width=45, height=35, fg_color="#DC2626", hover_color="#B91C1C", command=self.delete_current_teacher)
         self.btn_del_teacher.pack(side="left")
 
-        # 2. Document & Récents
+        # 2. Document
         ctk.CTkLabel(left_frame, text="2. Document à imprimer :", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=15, pady=(12, 2))
 
         doc_box = ctk.CTkFrame(left_frame, fg_color="transparent")
@@ -216,7 +269,7 @@ class PrintPayApp(ctk.CTk):
         self.lbl_filename = ctk.CTkLabel(left_frame, text="Aucun fichier sélectionné", text_color="#94A3B8")
         self.lbl_filename.pack(anchor="w", padx=15, pady=(2, 8))
 
-        # 3. Options d'impression & Tarifs
+        # 3. Options d'impression
         ctk.CTkLabel(left_frame, text="3. Options d'impression & Tarifs :", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=15, pady=(5, 2))
 
         opts_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
@@ -229,8 +282,14 @@ class PrintPayApp(ctk.CTk):
         self.rb_verso = ctk.CTkRadioButton(opts_frame, text="Recto-Verso (25 Fr)", variable=self.recto_verso_var, value="duplex", command=self.update_total)
         self.rb_verso.pack(side="left", padx=15)
 
+        # Case Couleur reliée au basculement en direct de l'aperçu
         self.color_var = ctk.BooleanVar(value=False)
-        self.chk_color = ctk.CTkCheckBox(opts_frame, text="Couleur (+25 Fr)", variable=self.color_var, command=self.update_total)
+        self.chk_color = ctk.CTkCheckBox(
+            opts_frame, 
+            text="Couleur (+25 Fr)", 
+            variable=self.color_var, 
+            command=self.on_color_toggle
+        )
         self.chk_color.pack(side="left", padx=15)
 
         # Plage & Copies
@@ -287,7 +346,7 @@ class PrintPayApp(ctk.CTk):
         )
         self.btn_print.pack(fill="x", padx=15, pady=(5, 15))
 
-        # ---------------- DROITE : APERÇU ----------------
+        # ---------------- DROITE : APERÇU EN DIRECT ----------------
         right_frame = ctk.CTkFrame(body, width=480)
         right_frame.pack(side="right", fill="both", expand=True)
 
@@ -308,7 +367,12 @@ class PrintPayApp(ctk.CTk):
         self.btn_next_page = ctk.CTkButton(nav_frame, text="Suivante ▶", width=110, command=self.next_preview_page)
         self.btn_next_page.pack(side="left", padx=5)
 
-    # ---------------- APERÇU ----------------
+    # ---------------- BASULEMENT DYNAMIQUE COULEUR & APERÇU ----------------
+    def on_color_toggle(self):
+        """Met à jour le total ET bascule l'aperçu immédiatement en N&B ou Couleur"""
+        self.update_total()
+        self.render_preview()
+
     def on_range_change(self):
         self.update_total()
         range_str = self.entry_pages.get().strip()
@@ -333,7 +397,12 @@ class PrintPayApp(ctk.CTk):
                 if physical_page > len(doc):
                     return
                 page = doc.load_page(physical_page - 1)
-                pix = page.get_pixmap(dpi=85)
+                
+                # Espace de couleur dynamique selon la case cochée
+                is_color = self.color_var.get()
+                c_space = pymupdf.csRGB if is_color else pymupdf.csGRAY
+                
+                pix = page.get_pixmap(dpi=85, colorspace=c_space)
                 img_data = pix.tobytes("png")
                 pil_img = Image.open(io.BytesIO(img_data))
                 pil_img.thumbnail((360, 480))
@@ -343,7 +412,10 @@ class PrintPayApp(ctk.CTk):
                 
                 total_in_range = len(self.selected_pages_list)
                 curr_in_range = self.current_selection_index + 1
-                self.lbl_preview_page.configure(text=f"Page {curr_in_range} / {total_in_range} (Feuille {physical_page})")
+                mode_tag = " [Couleur]" if is_color else " [N&B]"
+                self.lbl_preview_page.configure(
+                    text=f"Page {curr_in_range} / {total_in_range} (Feuille {physical_page}){mode_tag}"
+                )
         except Exception as e:
             self.preview_canvas.configure(image=None, text=f"Erreur d'aperçu : {e}")
 
@@ -357,7 +429,7 @@ class PrintPayApp(ctk.CTk):
             self.current_selection_index -= 1
             self.render_preview()
 
-    # ---------------- CONTRÔLES ----------------
+    # ---------------- CONTRÔLES FORMULAIRE ----------------
     def refresh_recent_dropdown(self):
         recent_rows = get_app_recent_files()
         if not recent_rows:
@@ -402,6 +474,28 @@ class PrintPayApp(ctk.CTk):
             except sqlite3.IntegrityError:
                 messagebox.showwarning("Doublon", "Cet enseignant existe déjà.")
             conn.close()
+
+    def delete_current_teacher(self):
+        teacher = self.teacher_combo.get()
+        if not teacher:
+            return
+
+        conf = messagebox.askyesno(
+            "Confirmer la suppression", 
+            f"Voulez-vous vraiment retirer '{teacher}' de la liste des enseignants ?"
+        )
+        if conf:
+            conn = sqlite3.connect("printpay.db")
+            c = conn.cursor()
+            c.execute("DELETE FROM teachers WHERE nom = ?", (teacher,))
+            conn.commit()
+            conn.close()
+
+            profs = self.get_teachers()
+            self.teacher_combo.configure(values=profs)
+            if profs:
+                self.teacher_combo.set(profs[0])
+            messagebox.showinfo("Supprimé", f"'{teacher}' a été retiré de la liste.")
 
     def browse_file(self):
         path = filedialog.askopenfilename(filetypes=[("Documents", "*.pdf *.docx *.doc *.xlsx")])
@@ -475,6 +569,7 @@ class PrintPayApp(ctk.CTk):
             text=f"Pages: {nb_pages}  |  Feuilles: {feuilles} ({mode_txt}{color_txt})  |  Coût Total: {cout:,} FCFA".replace(",", " ")
         )
 
+    # ---------------- IMPRESSION PHYSIQUE ----------------
     def execute_print(self):
         teacher = self.teacher_combo.get()
         if not teacher:
@@ -489,10 +584,11 @@ class PrintPayApp(ctk.CTk):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         is_duplex = (self.recto_verso_var.get() == "duplex")
         is_color = self.color_var.get()
+        copies = int(self.entry_copies.get())
         mode_str = "Recto-Verso" if is_duplex else "Recto Simple"
         type_str = "Couleur" if is_color else "Noir & Blanc"
 
-        # 1. Enregistrement local
+        # 1. Enregistrement local SQLite
         conn = sqlite3.connect("printpay.db")
         cursor = conn.cursor()
         cursor.execute("""
@@ -500,7 +596,7 @@ class PrintPayApp(ctk.CTk):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         """, (
             teacher, doc_name, self.selected_filepath, range_str, self.calculated_pages,
-            int(self.entry_copies.get()), self.calculated_feuilles,
+            copies, self.calculated_feuilles,
             mode_str, type_str, self.calculated_cout, now
         ))
         conn.commit()
@@ -508,19 +604,50 @@ class PrintPayApp(ctk.CTk):
 
         self.refresh_recent_dropdown()
 
-        # 2. Impression
-        if not is_simulation:
-            if self.selected_filepath and os.path.exists(self.selected_filepath):
-                if SYSTEM_OS == "Darwin":
-                    options = ["-d", printer, "-n", str(self.entry_copies.get())]
+        # 2. Impression physique
+        if not is_simulation and self.selected_filepath and os.path.exists(self.selected_filepath):
+            target_pages, _ = parse_page_range(range_str, self.total_doc_pages)
+            if not target_pages:
+                target_pages = [1]
+            
+            # APPEL DE LA FONCTION GLOBALE AVEC COULEUR EXACTE
+            ready_to_print_pdf = create_prepared_print_pdf(self.selected_filepath, target_pages, is_color=is_color)
+
+            try:
+                if SYSTEM_OS == "Darwin":  # macOS (CUPS lp)
+                    options = ["-d", printer, "-n", str(copies), "-o", "fit-to-page"]
                     if is_duplex:
                         options.extend(["-o", "sides=two-sided-long-edge"])
-                    if range_str:
-                        options.extend(["-o", f"page-ranges={range_str}"])
-                    subprocess.run(["lp"] + options + [self.selected_filepath])
+                    else:
+                        options.extend(["-o", "sides=one-sided"])
+                    
+                    if is_color:
+                        options.extend(["-o", "print-color-mode=color", "-o", "ColorModel=RGB", "-o", "CNColorMode=color"])
+                    else:
+                        options.extend(["-o", "print-color-mode=monochrome", "-o", "ColorModel=Gray", "-o", "CNColorMode=mono"])
+
+                    subprocess.run(["lp"] + options + [ready_to_print_pdf])
+
                 elif SYSTEM_OS == "Windows":
-                    os.startfile(self.selected_filepath, "print")
-            success_msg = f"✅ Impression lancée !\n{self.calculated_cout} FCFA débités pour {teacher}."
+                    sumatra = find_sumatra_executable()
+                    if sumatra:
+                        duplex_opt = "duplex" if is_duplex else "simplex"
+                        copies_opt = f"{copies}x"
+                        # Ordre strict : color ou monochrome
+                        color_opt = "color" if is_color else "monochrome"
+                        settings = f"{duplex_opt},{copies_opt},{color_opt}"
+                        cmd = f'"{sumatra}" -print-to "{printer}" -print-settings "{settings}" "{ready_to_print_pdf}"'
+                        print(f"[PrintPay] Exécution : {cmd}")
+                        subprocess.run(cmd, shell=True)
+                    else:
+                        print("[PrintPay] Sumatra introuvable, fallback vers printto")
+                        import win32api
+                        win32api.ShellExecute(0, "printto", ready_to_print_pdf, f'"{printer}"', ".", 0)
+
+            except Exception as e:
+                print(f"Erreur d'impression physique: {e}")
+
+            success_msg = f"✅ Impression envoyée à '{printer}' !\nMode : {type_str}\n{self.calculated_cout} FCFA débités pour {teacher}."
         else:
             success_msg = f"🧪 [TEST RÉUSSI] Impression simulée !\n{self.calculated_cout} FCFA enregistrés pour {teacher}."
 
@@ -531,7 +658,6 @@ class PrintPayApp(ctk.CTk):
 
     # ---------------- SYNCHRONISATION MULTITHREAD SÉCURISÉE ----------------
     def push_pending_batch(self):
-        """Exécuté dans un thread séparé : ne touche JAMAIS directement à l'interface Tkinter"""
         try:
             conn = sqlite3.connect("printpay.db")
             cursor = conn.cursor()
@@ -569,30 +695,8 @@ class PrintPayApp(ctk.CTk):
             conn.close()
         except Exception:
             self.sync_queue.put(("⚠️ En attente connexion", "#F59E0B"))
-            
-    def delete_current_teacher(self):
-        teacher = self.teacher_combo.get()
-        if not teacher:
-            return
 
-        conf = messagebox.askyesno(
-            "Confirmer la suppression", 
-            f"Voulez-vous vraiment retirer '{teacher}' de la liste des enseignants ?"
-        )
-        if conf:
-            conn = sqlite3.connect("printpay.db")
-            c = conn.cursor()
-            c.execute("DELETE FROM teachers WHERE nom = ?", (teacher,))
-            conn.commit()
-            conn.close()
-
-            # Met à jour la liste déroulante
-            profs = self.get_teachers()
-            self.teacher_combo.configure(values=profs)
-            if profs:
-                self.teacher_combo.set(profs[0])
-            messagebox.showinfo("Supprimé", f"'{teacher}' a été retiré de la liste avec succès.")
-
+# ----------------- 4. POINT D'ENTRÉE PRINCIPAL -----------------
 if __name__ == "__main__":
     app = PrintPayApp()
     app.mainloop()
