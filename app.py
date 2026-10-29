@@ -37,7 +37,7 @@ SYSTEM_OS = platform.system()
 GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbz4e6qYq47cUV_xHfFA12rJ44uqFxhlgpfbmBjO3AcgUWKxYTm7YVsZVqlhumJAdJy9/exec"
 
 # Configuration des mises a jour GitHub Releases
-CURRENT_VERSION = "v1.0.0"
+CURRENT_VERSION = "v1.0.1"
 GITHUB_REPO = "bkablam11/smartPrintPay"
 
 # ----------------- 1. BASE DE DONNEES LOCALE -----------------
